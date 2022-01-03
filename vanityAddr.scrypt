@@ -1,0 +1,58 @@
+import "ec.scrypt";
+import "util.scrypt";
+import "base58.scrypt";
+
+contract VanityAddr {
+
+    static const int PUBKEY_UNCOMP_BYTES = 65;
+
+    bytes serializedPubKeys;
+    bytes pattern;
+    Ripemd160 cancelPubKeyHash;
+
+    public function cancel(Sig sig, PubKey pubKey) {
+        require(hash160(pubKey) == this.cancelPubKeyHash);
+        require(checkSig(sig, pubKey));
+    }
+
+    public function offerVanityAddr(PrivKey x,
+                                    PubKey X,
+                                    PubKey derivedPubKey,
+                                    int lambda,
+                                    int idxP,
+                                    SigHashPreimage txPreimage) {
+        // Check if x is private key of X.
+        require(Tx.checkPreimageAdvanced(txPreimage, x, X, Tx.invK, Tx.r, Tx.rBigEndian, SigHashType(SigHash.ALL | SigHash.FORKID)));
+
+        // Check if P' = P + X.
+        int start = idxP * PUBKEY_UNCOMP_BYTES; 
+        int end = start + PUBKEY_UNCOMP_BYTES;
+        PubKey P = PubKey(this.serializedPubKeys[start:end]);
+        require(EC.isPubKeySum(P, X, lambda, derivedPubKey));
+
+        // Check if P' produces desired address.
+        PubKey derivedPubKeyCompressed = compressPubKey(derivedPubKey);
+        require(matchPattern(derivedPubKeyCompressed, this.pattern));
+    }
+
+    // Check if public key's address matches the given pattern.
+    static function matchPattern(PubKey pubKey, bytes pattern) : bool {
+        // Derive the address.
+        bytes addr = hash160(pubKey);
+
+        // Encode to base58check.
+        bytes addrB58 = Base58.base58EncodeCheckAddr(addr, Base58.P2PKH_verbyte_mainnet);
+
+        // Prefix match.
+        int l = len(pattern);
+        return addrB58[:l] == pattern;
+    }
+
+    static function compressPubKey(PubKey pk) : PubKey {
+        // Check if y-coord is even or odd
+        bool isEven = (pk[63:64] & b'01') != b'01';
+
+        bytes prefix = isEven ? b'02' : b'03';
+        return PubKey(prefix + pk[1:33]);
+    }
+}
