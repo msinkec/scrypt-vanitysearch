@@ -12,7 +12,7 @@ Generate an arbitrary private key `k`, that you will use to assemble the final p
 
 Then run:
 
-```sh
+```
 ./publish_contract.py <private key k (WIF)> <prefix> <award sats>
 
 # Example:

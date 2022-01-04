@@ -118,12 +118,13 @@ def fund_tx(tx, fees):
 
     print('Send at least {} satoshis to {} in order to fund the transaction.'.format(
                             fees, funding_address.to_string()))
+    print('If something fails, here\'s the private key of the funding address to get your money back: {}'.format(
+        funding_key.to_WIF()))
 
     input('Press any key to continue...')
 
     # Check if address was funded
     resp = requests.get('https://api.whatsonchain.com/v1/bsv/main/address/{}/unspent'.format(funding_address.to_string()))
-    #resp = requests.get('https://api.whatsonchain.com/v1/bsv/main/address/1PmMarcNDxLaw2diCc31SEsU3tET2uxhNe/unspent')
     while len(resp.json()) == 0:
         input('Address isn\'t funded yet. Press any key to retry...')
 
@@ -137,7 +138,7 @@ def fund_tx(tx, fees):
     funding_lscript = resp.json()['vout'][funding_utxo_pos]['scriptPubKey']['hex']
 
     funding_input = TxInput(
-            bytes.fromhex(funding_tx_hash),
+            bytes.fromhex(funding_tx_hash)[::-1],
             funding_utxo_pos,
             Script(),
             0xffffffff
