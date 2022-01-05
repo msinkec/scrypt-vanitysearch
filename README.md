@@ -2,7 +2,7 @@
 
 Deployment code for a contract, that allows for trustless generation of Bitcoin vanity addresses. 
 
-[VanitySearch](https://github.com/JeanLucPons/VanitySearch) optimiztaions (symmetry and endomorphism) are supported. The contract itself is written in [sCrypt](https://scrypt.io).
+[VanitySearch](https://github.com/JeanLucPons/VanitySearch) optimizations (symmetry and endomorphism) are supported. The contract itself is written in [sCrypt](https://scrypt.io).
 
 
 ## Usage
@@ -13,9 +13,9 @@ Generate an arbitrary private key `k`, that you will use to assemble the final p
 Then run:
 
 ```
-./publish_contract.py <private key k (WIF)> <prefix> <award sats>
+./vanity.py deploy <private key k (WIF)> <prefix> <award sats>
 
 # Example:
-# ./publish_contract.py L2yiMfGo2wLaNmF3wTTBLbrzM39LonTVqNg7nEutbBvRkYgTYB1c 1miha 100000
+# ./vanity.py deploy L2yiMfGo2wLaNmF3wTTBLbrzM39LonTVqNg7nEutbBvRkYgTYB1c 1miha 100000
 ```
 

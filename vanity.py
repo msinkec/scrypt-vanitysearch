@@ -7,11 +7,18 @@ import math
 
 from bitcoinx import (
         PrivateKey, TxOutput, TxInput, Tx,
-        Script, SigHash, pack_byte
+        Script, SigHash, pack_byte, PublicKey
         )
 
 import scryptlib
 from scryptlib.types import *
+
+
+contract = './vanityAddr.scrypt'
+compiler_result = scryptlib.utils.compile_contract(contract)
+desc = compiler_result.to_desc()
+
+VanityAddr = scryptlib.build_contract_class(desc)
 
 
 b58_rev_alpha = {
@@ -134,7 +141,6 @@ def fund_tx(tx, fees):
 
     # Get locking script
     resp = requests.get('https://api.whatsonchain.com/v1/bsv/main/tx/hash/{}'.format(funding_tx_hash))
-
     funding_lscript = resp.json()['vout'][funding_utxo_pos]['scriptPubKey']['hex']
 
     funding_input = TxInput(
@@ -172,27 +178,13 @@ def get_min_fee_amount(tx):
     return math.ceil(fee_rate * tx.size())
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Publish vanity address contract.')
-    parser.add_argument('priv_key', metavar='PrivKey', type=str,
-                        help='Private key in WIF.')
-    parser.add_argument('addr_prefix', metavar='AddrPrefix', type=str,
-                        help='Address prefix to look for (e.g. "1sCrypt").')
-    parser.add_argument('sats_solution', metavar='SatsSolution', type=str,
-                        help='Amount of satoshis to be payed for a valid solution.')
-    args = parser.parse_args()
-
+def deploy(args):
     k = PrivateKey.from_WIF(args.priv_key)
     moneyback_addr = k.public_key.to_address()
     contract_pubkeys = derive_contract_pubkeys(k)
-    serialized_pubkeys = b''.join([pk.to_bytes() for pk in contract_pubkeys])
+    serialized_pubkeys = b''.join([pk.to_bytes(compressed=False) for pk in contract_pubkeys])
     pattern = b''.join([b58_rev_alpha[x] for x in args.addr_prefix])
 
-    contract = './vanityAddr.scrypt'
-    compiler_result = scryptlib.utils.compile_contract(contract)
-    desc = compiler_result.to_desc()
-
-    VanityAddr = scryptlib.build_contract_class(desc)
     vanity_addr = VanityAddr(
             Bytes(serialized_pubkeys),
             Bytes(pattern),
@@ -208,3 +200,55 @@ if __name__ == '__main__':
     fund_tx(tx, min_fees + int(args.sats_solution))
     broadcast_tx(tx)
 
+
+def cancel(args):
+    vanity_addr = VanityAddr(
+            Bytes(b''),
+            Bytes(b''),
+            Ripemd160(b'\x00' * 20)
+            )
+
+
+def claim(args):
+    contract_txid = args.txid
+    idx_out = args.idx_out
+
+    resp = requests.get('https://api.whatsonchain.com/v1/bsv/main/tx/hash/{}'.format(contract_txid))
+    contract_lscript = Script.from_hex(resp.json()['vout'][idx_out]['scriptPubKey']['hex'])
+    contract_lscript_ops = list(contract_lscript.ops())
+
+    pubkeys_serialized = contract_lscript_ops[6][3:]  # Drop OP_PUSHDATA2
+    pattern = contract_lscript_ops[7]
+
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Publish vanity address contract.')
+    subparsers = parser.add_subparsers(dest='command')
+
+    # Oprations
+    deploy_parser = subparsers.add_parser('deploy', help='Deploy contract.')
+    cancel_parser = subparsers.add_parser('cancel', help='Cancel contract.')
+    claim_parser = subparsers.add_parser('claim', help='Claim reward.')
+
+    deploy_parser.add_argument('priv_key', metavar='PrivKey', type=str,
+                        help='Private key in WIF.')
+    deploy_parser.add_argument('addr_prefix', metavar='AddrPrefix', type=str,
+                        help='Address prefix to look for (e.g. "1sCrypt").')
+    deploy_parser.add_argument('sats_solution', metavar='SatsSolution', type=str,
+                        help='Amount of satoshis to be payed for a valid solution.')
+
+    claim_parser.add_argument('txid', metavar='TXID', type=str,
+                        help='ID of transaction containing the contract.')
+    claim_parser.add_argument('idx_out', metavar='OutIDX', type=int,
+                        help='Index of the output containing the contract code.')
+
+
+    args = parser.parse_args()
+
+    if args.command == 'deploy':
+        deploy(args)
+    elif args.command == 'cancel':
+        cancel(args)
+    elif args.command == 'claim':
+        claim(args)
