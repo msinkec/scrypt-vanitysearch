@@ -19,3 +19,10 @@ Then run:
 # ./vanity.py deploy L2yiMfGo2wLaNmF3wTTBLbrzM39LonTVqNg7nEutbBvRkYgTYB1c 1miha 100000
 ```
 
+### Cancel contract
+If you want to cancel your contract, then run the following command:
+
+```
+./vanity.py cancel <contract txid> <index of contract output> <private key k (WIF)> <payment destination address>
+```
+

@@ -7,7 +7,8 @@ import math
 
 from bitcoinx import (
         PrivateKey, TxOutput, TxInput, Tx,
-        Script, SigHash, pack_byte, PublicKey
+        Script, SigHash, pack_byte, P2PKH_Address, Bitcoin,
+        TxInputContext, InterpreterLimits, MinerPolicy
         )
 
 import scryptlib
@@ -149,16 +150,16 @@ def fund_tx(tx, fees):
             Script(),
             0xffffffff
             )
-    tx.inputs = [funding_input]
+    tx.inputs.append(funding_input)
 
     sighash_flag = SigHash(SigHash.ALL | SigHash.FORKID)
     sighash = tx.signature_hash(
-            0, funding_utxo_val, bytes.fromhex(funding_lscript), sighash_flag)
+            len(tx.inputs) - 1, funding_utxo_val, bytes.fromhex(funding_lscript), sighash_flag)
     sig = funding_key.sign(sighash, hasher=None)
     sig = sig + pack_byte(sighash_flag)
 
     funding_uscript = Script() << sig << funding_key.public_key.to_bytes()
-    tx.inputs[0].script_sig = funding_uscript
+    tx.inputs[-1].script_sig = funding_uscript
             
 
 def broadcast_tx(tx):
@@ -178,6 +179,16 @@ def get_min_fee_amount(tx):
     return math.ceil(fee_rate * tx.size())
 
 
+def get_contract_lscript(txid, idx_out):
+    resp = requests.get('https://api.whatsonchain.com/v1/bsv/main/tx/hash/{}'.format(txid))
+    return Script.from_hex(resp.json()['vout'][idx_out]['scriptPubKey']['hex'])
+
+
+def get_contract_val(txid, idx_out):
+    resp = requests.get('https://api.whatsonchain.com/v1/bsv/main/tx/hash/{}'.format(txid))
+    return int(resp.json()['vout'][idx_out]['value'] * 100000000)
+
+
 def deploy(args):
     k = PrivateKey.from_WIF(args.priv_key)
     moneyback_addr = k.public_key.to_address()
@@ -194,27 +205,63 @@ def deploy(args):
     # Contstruct and fund TX, then broadcast it
     contract_out = TxOutput(int(args.sats_solution), vanity_addr.locking_script)
     tx = Tx(2, [], [contract_out], 0x00000000)
+
     # Add dummy funding input just to get the correct fee quote.
     tx.inputs.append(TxInput(b'\x00' * 32, 0, Script(b'\x00' * 106), 0xffffffff))
     min_fees = get_min_fee_amount(tx)
+
+    # Remove dummy input
+    tx.inputs = tx.inputs[0:-1]
+
     fund_tx(tx, min_fees + int(args.sats_solution))
     broadcast_tx(tx)
 
 
 def cancel(args):
+    contract_txid = args.txid
+    idx_out = args.idx_out
+    priv_key = PrivateKey.from_WIF(args.priv_key)
+    dest_addr = P2PKH_Address.from_string(args.dest_addr, Bitcoin)
+
+    contract_lscript = get_contract_lscript(contract_txid, idx_out)
+    contract_val = get_contract_val(contract_txid, idx_out)
+
     vanity_addr = VanityAddr(
             Bytes(b''),
             Bytes(b''),
             Ripemd160(b'\x00' * 20)
             )
 
+    p2pkh_out = TxOutput(contract_val, dest_addr.to_script())
+    tx = Tx(2, [], [p2pkh_out], 0x00000000)
+    tx.inputs.append(TxInput(bytes.fromhex(contract_txid)[::-1], idx_out, Script(b'\x00' * 107), 0xffffffff))
+
+    # Add dummy funding input just to get the correct fee quote.
+    tx.inputs.append(TxInput(b'\x00' * 32, 0, Script(b'\x00' * 106), 0xffffffff))
+    min_fees = get_min_fee_amount(tx)
+
+    # Remove dummy input
+    tx.inputs = tx.inputs[:-1]
+
+    fund_tx(tx, min_fees)
+
+    sighash_flag = SigHash(SigHash.ALL | SigHash.FORKID)
+    sighash = tx.signature_hash(
+            0, contract_val, contract_lscript.to_bytes(), sighash_flag)
+    sig = priv_key.sign(sighash, hasher=None)
+    sig = sig + pack_byte(sighash_flag)
+
+    unlocking_script = vanity_addr.cancel(Sig(sig), PubKey(priv_key.public_key)).unlocking_script
+    tx.inputs[0].script_sig = unlocking_script
+
+    broadcast_tx(tx)
+
 
 def claim(args):
     contract_txid = args.txid
     idx_out = args.idx_out
 
-    resp = requests.get('https://api.whatsonchain.com/v1/bsv/main/tx/hash/{}'.format(contract_txid))
-    contract_lscript = Script.from_hex(resp.json()['vout'][idx_out]['scriptPubKey']['hex'])
+    contract_lscript = get_contract_lscript(contract_txid, idx_out)
     contract_lscript_ops = list(contract_lscript.ops())
 
     pubkeys_serialized = contract_lscript_ops[6][3:]  # Drop OP_PUSHDATA2
@@ -242,6 +289,15 @@ if __name__ == '__main__':
                         help='ID of transaction containing the contract.')
     claim_parser.add_argument('idx_out', metavar='OutIDX', type=int,
                         help='Index of the output containing the contract code.')
+
+    cancel_parser.add_argument('txid', metavar='TXID', type=str,
+                        help='ID of transaction containing the contract.')
+    cancel_parser.add_argument('idx_out', metavar='OutIDX', type=int,
+                        help='Index of the output containing the contract code.')
+    cancel_parser.add_argument('priv_key', metavar='PrivKey', type=str,
+                        help='Private key in WIF. This is the same key, that was used to deploy the contract.')
+    cancel_parser.add_argument('dest_addr', metavar='DestAddr', type=str,
+                        help='Destination address to withdraw funds to.')
 
 
     args = parser.parse_args()
