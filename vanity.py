@@ -6,7 +6,7 @@ import json
 import math
 
 from bitcoinx import (
-        PrivateKey, TxOutput, TxInput, Tx,
+        PrivateKey, PublicKey, TxOutput, TxInput, Tx,
         Script, SigHash, pack_byte, P2PKH_Address, Bitcoin,
         TxInputContext, InterpreterLimits, MinerPolicy
         )
@@ -21,6 +21,66 @@ desc = compiler_result.to_desc()
 
 VanityAddr = scryptlib.build_contract_class(desc)
 
+b58_alpha = {
+    0x00 : '1', 
+    0x01 : '2', 
+    0x02 : '3', 
+    0x03 : '4', 
+    0x04 : '5', 
+    0x05 : '6', 
+    0x06 : '7', 
+    0x07 : '8', 
+    0x08 : '9', 
+    0x09 : 'A', 
+    0x0a : 'B', 
+    0x0b : 'C', 
+    0x0c : 'D', 
+    0x0d : 'E', 
+    0x0e : 'F', 
+    0x0f : 'G', 
+    0x10 : 'H', 
+    0x11 : 'J', 
+    0x12 : 'K', 
+    0x13 : 'L', 
+    0x14 : 'M', 
+    0x15 : 'N', 
+    0x16 : 'P', 
+    0x17 : 'Q', 
+    0x18 : 'R', 
+    0x19 : 'S', 
+    0x1a : 'T', 
+    0x1b : 'U', 
+    0x1c : 'V', 
+    0x1d : 'W', 
+    0x1e : 'X', 
+    0x1f : 'Y', 
+    0x20 : 'Z', 
+    0x21 : 'a', 
+    0x22 : 'b', 
+    0x23 : 'c', 
+    0x24 : 'd', 
+    0x25 : 'e', 
+    0x26 : 'f', 
+    0x27 : 'g', 
+    0x28 : 'h', 
+    0x29 : 'i', 
+    0x2a : 'j', 
+    0x2b : 'k', 
+    0x2c : 'm', 
+    0x2d : 'n', 
+    0x2e : 'o', 
+    0x2f : 'p', 
+    0x30 : 'q', 
+    0x31 : 'r', 
+    0x32 : 's', 
+    0x33 : 't', 
+    0x34 : 'u', 
+    0x35 : 'v', 
+    0x36 : 'w', 
+    0x37 : 'x', 
+    0x38 : 'y', 
+    0x39 : 'z', 
+    }
 
 b58_rev_alpha = {
     '1': b'\x00',
@@ -120,6 +180,56 @@ def derive_contract_pubkeys(k):
     return res
 
 
+def mod_inverse(b, m):
+    g = math.gcd(b, m)
+    if (g != 1):
+        # Inverse doesn't exist.
+        return -1
+    else:
+        return pow(b, m - 2, m)
+
+
+def mod_divide(a, b, m):
+    a = a % m
+    inv = mod_inverse(b, m)
+    if(inv == -1):
+        raise Exception("Division not defined")
+    return (inv * a) % m
+
+
+def get_lambda(P1x, P1y, P2x, P2y, p):
+    if P1x == P2x and P1y == P2y:
+        a = 0
+        lambda_numerator = 3 * (P1x**2) + a
+        lambda_denominator = 2 * P1y
+        return mod_divide(lambda_numerator, lambda_denominator, p)
+    else:
+        lambda_numerator = P2y - P1y
+        lambda_denominator = P2x - P1x
+        return mod_divide(lambda_numerator, lambda_denominator, p)
+
+
+def get_correct_pubkey_idx(pubkeys_serialized, partial_priv, pattern):
+    i = 0
+    idx = 0
+    while i < len(pubkeys_serialized):
+        pubkey = PublicKey.from_bytes(pubkeys_serialized[i:i+65])
+        pubkey_der = pubkey.add(partial_priv._secret)
+        pubkey_der_comp = PublicKey.from_bytes(pubkey_der.to_bytes(compressed=True))
+
+        pattern_str = ''.join([b58_alpha[b] for b in pattern])
+        
+        addr = pubkey_der_comp.to_address().to_string()
+        if addr[1:].startswith(pattern_str):
+            return idx
+
+        i += 65
+        idx += 1
+
+    raise Exception('Can\'t derive pubkey, that produces the correct address prefix.')
+    
+
+
 def fund_tx(tx, fees):
     funding_key = PrivateKey.from_random()
     funding_address = funding_key.public_key.to_address()
@@ -198,7 +308,7 @@ def deploy(args):
 
     vanity_addr = VanityAddr(
             Bytes(serialized_pubkeys),
-            Bytes(pattern),
+            Bytes(pattern[1:]),
             Ripemd160(moneyback_addr.to_string())
             )
 
@@ -260,12 +370,63 @@ def cancel(args):
 def claim(args):
     contract_txid = args.txid
     idx_out = args.idx_out
+    x = PrivateKey.from_WIF(args.partial_priv)
+    dest_addr = P2PKH_Address.from_string(args.dest_addr, Bitcoin)
 
     contract_lscript = get_contract_lscript(contract_txid, idx_out)
     contract_lscript_ops = list(contract_lscript.ops())
+    contract_val = get_contract_val(contract_txid, idx_out)
 
-    pubkeys_serialized = contract_lscript_ops[6][3:]  # Drop OP_PUSHDATA2
+    pubkeys_serialized = contract_lscript_ops[6]
     pattern = contract_lscript_ops[7]
+
+    vanity_addr = VanityAddr(
+            Bytes(b''),
+            Bytes(b''),
+            Ripemd160(b'\x00' * 20)
+            )
+
+    p2pkh_out = TxOutput(contract_val, dest_addr.to_script())
+    tx = Tx(2, [], [p2pkh_out], 0x00000000)
+    tx.inputs.append(TxInput(bytes.fromhex(contract_txid)[::-1], idx_out, Script(b'\x00' * 5008), 0xffffffff))
+
+    # Add dummy funding input just to get the correct fee quote.
+    tx.inputs.append(TxInput(b'\x00' * 32, 0, Script(b'\x00' * 106), 0xffffffff))
+    min_fees = get_min_fee_amount(tx)
+
+    # Remove dummy funding input
+    tx.inputs = tx.inputs[:-1]
+
+    fund_tx(tx, min_fees)
+
+    X = x.public_key
+
+    idxP = get_correct_pubkey_idx(pubkeys_serialized, x, pattern)
+    start = idxP * 65; 
+    end = start + 65;
+
+    P = PublicKey.from_hex(pubkeys_serialized[start:end].hex())
+
+    derived_pubkey = PublicKey.combine_keys([P, X])
+
+    Px, Py = P.to_point()
+    Xx, Xy = X.to_point()
+    p = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f
+    lambda_val = get_lambda(Px, Py, Xx, Xy, p)
+
+    sighash_flag = SigHash(SigHash.ALL | SigHash.FORKID)
+    preimage = scryptlib.get_preimage(tx, idx_out, contract_val, contract_lscript, sighash_flag)
+
+    unlocking_script = vanity_addr.offerVanityAddr(
+            PrivKey(x),
+            PubKey(X.to_bytes(compressed=False)),
+            PubKey(derived_pubkey.to_bytes(compressed=False)),
+            Int(lambda_val),
+            Int(idxP),
+            SigHashPreimage(preimage)).unlocking_script
+    tx.inputs[0].script_sig = unlocking_script
+
+    broadcast_tx(tx)
 
 
 
@@ -289,6 +450,10 @@ if __name__ == '__main__':
                         help='ID of transaction containing the contract.')
     claim_parser.add_argument('idx_out', metavar='OutIDX', type=int,
                         help='Index of the output containing the contract code.')
+    claim_parser.add_argument('partial_priv', metavar='PartialPriv', type=str,
+                        help='Partial private key, generated by VanitySearch.')
+    claim_parser.add_argument('dest_addr', metavar='DestAddr', type=str,
+                        help='Destination address to withdraw funds to.')
 
     cancel_parser.add_argument('txid', metavar='TXID', type=str,
                         help='ID of transaction containing the contract.')
