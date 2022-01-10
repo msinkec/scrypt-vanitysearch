@@ -26,3 +26,18 @@ If you want to cancel your contract, then run the following command:
 ./vanity.py cancel <contract txid> <index of contract output> <private key k (WIF)> <payment destination address>
 ```
 
+### Info on deployed contract
+The following command prints info about a deployed contract:
+
+```
+./vanity.py info <contract txid> <index of contract output>
+```
+
+### Claim reward
+Once you find a valid partial private key `x` with VanitySearch, you can claim your reward:
+
+```
+./vanity.py claim <contract txid> <index of contract output> <private key x (WIF)> <reward destination address>
+```
+
+

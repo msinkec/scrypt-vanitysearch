@@ -367,6 +367,24 @@ def cancel(args):
     broadcast_tx(tx)
 
 
+def info(args):
+    contract_txid = args.txid
+    idx_out = args.idx_out
+
+    contract_lscript = get_contract_lscript(contract_txid, idx_out)
+    contract_lscript_ops = list(contract_lscript.ops())
+    contract_val = get_contract_val(contract_txid, idx_out)
+
+    pubkeys_serialized = contract_lscript_ops[6]
+    P = PublicKey.from_bytes(pubkeys_serialized[:65])
+    pattern = contract_lscript_ops[7]
+    pattern_str = ''.join([b58_alpha[b] for b in pattern])
+
+    print('P:', P.to_hex(compressed=True))
+    print('Prefix pattern:', '1' + pattern_str)
+    print('Rewards (sats):', contract_val)
+
+
 def claim(args):
     contract_txid = args.txid
     idx_out = args.idx_out
@@ -438,6 +456,7 @@ if __name__ == '__main__':
     deploy_parser = subparsers.add_parser('deploy', help='Deploy contract.')
     cancel_parser = subparsers.add_parser('cancel', help='Cancel contract.')
     claim_parser = subparsers.add_parser('claim', help='Claim reward.')
+    info_parser = subparsers.add_parser('info', help='Show deployed contract parameters.')
 
     deploy_parser.add_argument('priv_key', metavar='PrivKey', type=str,
                         help='Private key in WIF.')
@@ -464,6 +483,11 @@ if __name__ == '__main__':
     cancel_parser.add_argument('dest_addr', metavar='DestAddr', type=str,
                         help='Destination address to withdraw funds to.')
 
+    info_parser.add_argument('txid', metavar='TXID', type=str,
+                        help='ID of transaction containing the contract.')
+    info_parser.add_argument('idx_out', metavar='OutIDX', type=int,
+                        help='Index of the output containing the contract code.')
+
 
     args = parser.parse_args()
 
@@ -473,3 +497,5 @@ if __name__ == '__main__':
         cancel(args)
     elif args.command == 'claim':
         claim(args)
+    elif args.command == 'info':
+        info(args)
