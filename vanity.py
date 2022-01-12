@@ -297,6 +297,11 @@ def get_contract_lscript(txid, idx_out):
     return Script.from_hex(resp.json()['vout'][idx_out]['scriptPubKey']['hex'])
 
 
+def get_contract_ulscript(txid, idx_in):
+    resp = requests.get('https://api.whatsonchain.com/v1/bsv/main/tx/hash/{}'.format(txid))
+    return Script.from_hex(resp.json()['vin'][idx_in]['scriptSig']['hex'])
+
+
 def get_contract_val(txid, idx_out):
     resp = requests.get('https://api.whatsonchain.com/v1/bsv/main/tx/hash/{}'.format(txid))
     return int(resp.json()['vout'][idx_out]['value'] * 100000000)
@@ -388,6 +393,24 @@ def info(args):
     print('Rewards (sats):', contract_val)
 
 
+def assemble(args):
+    txid = args.txid
+    idx_in = args.idx_in
+    priv_key = PrivateKey.from_WIF(args.priv_key)
+
+    contract_ulscript = get_contract_ulscript(txid, idx_in)
+    contract_ulscript_ops = list(contract_ulscript.ops())
+
+    partial_priv = PrivateKey.from_hex(contract_ulscript_ops[0][:32][::-1].hex())
+
+    derived_priv = priv_key.add(partial_priv._secret)
+    print('Final private key (WIF):', derived_priv.to_WIF())
+    print('Final private key (HEX):', derived_priv.to_hex())
+    print('Final public key:', derived_priv.public_key.to_hex())
+    print('Address:', derived_priv.public_key.to_address())
+
+    
+
 def claim(args):
     contract_txid = args.txid
     idx_out = args.idx_out
@@ -460,6 +483,8 @@ if __name__ == '__main__':
     cancel_parser = subparsers.add_parser('cancel', help='Cancel contract.')
     claim_parser = subparsers.add_parser('claim', help='Claim reward.')
     info_parser = subparsers.add_parser('info', help='Show deployed contract parameters.')
+    assemble_parser = subparsers.add_parser('assemble', help='Assemble final keypair from your private key and' \
+            ' the partial private key from the seller.')
 
     deploy_parser.add_argument('priv_key', metavar='PrivKey', type=str,
                         help='Private key in WIF.')
@@ -491,6 +516,13 @@ if __name__ == '__main__':
     info_parser.add_argument('idx_out', metavar='OutIDX', type=int,
                         help='Index of the output containing the contract code.')
 
+    assemble_parser.add_argument('txid', metavar='TXID', type=str,
+                        help='ID of transaction that spend the contract')
+    assemble_parser.add_argument('idx_in', metavar='InIDX', type=int,
+                        help='Index of the input containing the contract unlocking code.')
+    assemble_parser.add_argument('priv_key', metavar='PrivKey', type=str,
+                        help='Private key in WIF.')
+
 
     args = parser.parse_args()
 
@@ -502,3 +534,5 @@ if __name__ == '__main__':
         claim(args)
     elif args.command == 'info':
         info(args)
+    elif args.command == 'assemble':
+        assemble(args)

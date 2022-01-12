@@ -40,4 +40,10 @@ Once you find a valid partial private key `x` with VanitySearch, you can claim y
 ./vanity.py claim <contract txid> <index of contract output> <private key x (WIF)> <reward destination address>
 ```
 
+### Assemble final key pair
+When someone claims your contract, you can assemble the final key pair like so:
+
+```
+./vanity.py assemble <spending contract txid> <index of contract unlocking input> <private key k (WIF)>
+```
 
