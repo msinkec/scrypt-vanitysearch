@@ -21,6 +21,13 @@ desc = compiler_result.to_desc()
 
 VanityAddr = scryptlib.build_contract_class(desc)
 
+
+p = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f
+order = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
+lambda1 = PrivateKey.from_hex('5363ad4cc05c30e0a5261c028812645a122e22ea20816678df02967c1b23bd72')
+lambda2 = PrivateKey.from_hex('ac9c52b33fa3cf1f5ad9e3fd77ed9ba4a880b9fc8ec739c2e0cfc810b51283ce')
+
+
 b58_alpha = {
     0x00 : '1', 
     0x01 : '2', 
@@ -151,17 +158,12 @@ def derive_contract_pubkeys(k):
     res.append(k.public_key)
 
     # No sym, endo 1
-    lambda1 = PrivateKey.from_hex('5363ad4cc05c30e0a5261c028812645a122e22ea20816678df02967c1b23bd72')
     e = k.multiply(lambda1._secret)
     res.append(e.public_key)
 
     # No sym, endo 2
-    lambda2 = PrivateKey.from_hex('ac9c52b33fa3cf1f5ad9e3fd77ed9ba4a880b9fc8ec739c2e0cfc810b51283ce')
     e = k.multiply(lambda2._secret)
     res.append(e.public_key)
-
-    p = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f
-    order = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
 
     # Sym, no endo
     e = PrivateKey.from_int((k.to_int() * -1 + order) % p)
@@ -402,13 +404,27 @@ def assemble(args):
     contract_ulscript_ops = list(contract_ulscript.ops())
 
     partial_priv = PrivateKey.from_hex(contract_ulscript_ops[0][:32][::-1].hex())
+    idx_P = contract_ulscript_ops[4][0]
+
+    # Reapply optimizations
+    if idx_P == 1:
+        priv_key = priv_key.multiply(lambda1._secret)
+    elif idx_P == 2:
+        priv_key = priv_key.multiply(lambda2._secret)
+    elif idx_P == 3:
+        priv_key = PrivateKey.from_int((priv_key.to_int() * -1 + order) % p)
+    elif idx_P == 4:
+        priv_key = priv_key.multiply(lambda1._secret)
+        priv_key = PrivateKey.from_int((priv_key.to_int() * -1 + order) % p)
+    elif idx_P == 5:
+        priv_key = priv_key.multiply(lambda2._secret)
+        priv_key = PrivateKey.from_int((priv_key.to_int() * -1 + order) % p)
 
     derived_priv = priv_key.add(partial_priv._secret)
     print('Final private key (WIF):', derived_priv.to_WIF())
     print('Final private key (HEX):', derived_priv.to_hex())
     print('Final public key:', derived_priv.public_key.to_hex())
     print('Address:', derived_priv.public_key.to_address())
-
     
 
 def claim(args):
