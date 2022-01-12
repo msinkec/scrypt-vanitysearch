@@ -50,7 +50,7 @@ contract VanityAddr {
 
     static function compressPubKey(PubKey pk) : PubKey {
         // Check if y-coord is even or odd
-        bool isEven = (pk[63:64] & b'01') != b'01';
+        bool isEven = (pk[64:65] & b'01') != b'01';
 
         bytes prefix = isEven ? b'02' : b'03';
         return PubKey(prefix + pk[1:33]);
