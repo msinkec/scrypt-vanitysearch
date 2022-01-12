@@ -242,9 +242,12 @@ def fund_tx(tx, fees):
     input('Press any key to continue...')
 
     # Check if address was funded
-    resp = requests.get('https://api.whatsonchain.com/v1/bsv/main/address/{}/unspent'.format(funding_address.to_string()))
-    while len(resp.json()) == 0:
-        input('Address isn\'t funded yet. Press any key to retry...')
+    while True:
+        resp = requests.get('https://api.whatsonchain.com/v1/bsv/main/address/{}/unspent'.format(funding_address.to_string()))
+        if len(resp.json()) == 0:
+            input('Address isn\'t funded yet. Press any key to retry...')
+            continue
+        break
 
     funding_tx_hash = resp.json()[0]['tx_hash']
     funding_utxo_pos = resp.json()[0]['tx_pos']
