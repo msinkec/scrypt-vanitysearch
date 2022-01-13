@@ -290,8 +290,9 @@ def broadcast_tx(tx):
 def get_min_fee_amount(tx):
     response = requests.get('https://mapi.taal.com/mapi/feeQuote')
     fees = json.loads(response.json()['payload'])['fees']
-    fee_rate = fees[0]['miningFee']['satoshis'] / fees[0]['miningFee']['bytes'] 
-    return math.ceil(fee_rate * tx.size())
+    assert fees[0]['relayFee']['bytes'] == fees[0]['miningFee']['bytes']  
+    fee = ((fees[0]['miningFee']['satoshis'] + fees[0]['relayFee']['satoshis']) * tx.size()) / fees[0]['miningFee']['bytes'] 
+    return math.ceil(fee)
 
 
 def get_contract_lscript(txid, idx_out):
