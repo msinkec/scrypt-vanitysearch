@@ -405,7 +405,11 @@ def assemble(args):
     contract_ulscript_ops = list(contract_ulscript.ops())
 
     partial_priv = PrivateKey.from_hex(contract_ulscript_ops[0][:32][::-1].hex())
-    idx_P = contract_ulscript_ops[4][0]
+    try:
+        idx_P = contract_ulscript_ops[4][0]
+    except:
+        # index 0 gets encoded as b'' (OP_0)
+        idx_P = 0
 
     # Reapply optimizations
     if idx_P == 1:
